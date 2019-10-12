@@ -1,4 +1,4 @@
-module github.com/coinexchain/codon
+module github.com/coinexchain/randsrc
 
 go 1.13
 
