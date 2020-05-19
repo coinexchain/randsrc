@@ -19,7 +19,7 @@ type RandBytesSrcFromFile struct {
 	idx     int
 }
 
-func NewRandBytesSrcFromFile(fname string) RandBytesSrcFromFile {
+func NewRandBytesSrcFromFileWithSeed(fname string, seed []byte) RandBytesSrcFromFile {
 	rs := RandBytesSrcFromFile{}
 	rs.fname = fname
 	file, err := os.Open(fname)
@@ -29,9 +29,13 @@ func NewRandBytesSrcFromFile(fname string) RandBytesSrcFromFile {
 	rs.file = file
 	rs.scanner = bufio.NewScanner(rs.file)
 	rs.scanner.Buffer(make([]byte, 64), 64)
-	rs.h, _ = blake2b.New512(nil)
+	rs.h, _ = blake2b.New512(seed)
 	rs.step()
 	return rs
+}
+
+func NewRandBytesSrcFromFile(fname string) RandBytesSrcFromFile {
+	return NewRandBytesSrcFromFileWithSeed(fname, nil)
 }
 
 func (rs *RandBytesSrcFromFile) Close() {
@@ -70,8 +74,15 @@ func (rs *RandBytesSrcFromFile) GetBytes(n int) []byte {
 	return res
 }
 
+var chars = []rune("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
 func (rs *RandBytesSrcFromFile) GetString(n int) string {
-	return string(rs.GetBytes(n))
+	res := make([]byte, n)
+	for i, c := range rs.GetBytes(n) {
+		j := int(c)%len(chars)
+		res[i] = byte(chars[j])
+	}
+	return string(res)
 }
 
 type RandSrcFromFile struct {
@@ -79,8 +90,12 @@ type RandSrcFromFile struct {
 }
 
 func NewRandSrcFromFile(fname string) *RandSrcFromFile {
+	return NewRandSrcFromFileWithSeed(fname, nil)
+}
+
+func NewRandSrcFromFileWithSeed(fname string, seed []byte) *RandSrcFromFile {
 	var res RandSrcFromFile
-	res.RandBytesSrcFromFile = NewRandBytesSrcFromFile(fname)
+	res.RandBytesSrcFromFile = NewRandBytesSrcFromFileWithSeed(fname, seed)
 	return &res
 }
 
