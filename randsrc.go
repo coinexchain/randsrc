@@ -1,10 +1,11 @@
 package randsrc
 
 import (
-	"bufio"
+	"fmt"
 	"encoding/binary"
 	"hash"
 	"math"
+	"io"
 	"os"
 
 	"golang.org/x/crypto/blake2b"
@@ -13,9 +14,8 @@ import (
 type RandBytesSrcFromFile struct {
 	fname   string
 	file    *os.File
-	scanner *bufio.Scanner
 	h       hash.Hash
-	sum     []byte
+	buf     []byte
 	idx     int
 }
 
@@ -26,9 +26,11 @@ func NewRandBytesSrcFromFileWithSeed(fname string, seed []byte) RandBytesSrcFrom
 	if err != nil {
 		panic(err)
 	}
+	//n, err := file.Seek(0, os.SEEK_CUR)
+	//if err != nil {
+	//	panic(err)
+	//}
 	rs.file = file
-	rs.scanner = bufio.NewScanner(rs.file)
-	rs.scanner.Buffer(make([]byte, 64), 64)
 	rs.h, _ = blake2b.New512(seed)
 	rs.step()
 	return rs
@@ -42,22 +44,41 @@ func (rs *RandBytesSrcFromFile) Close() {
 	rs.file.Close()
 }
 
-func (rs *RandBytesSrcFromFile) step() {
-	if !rs.scanner.Scan() {
-		file, err := os.Open(rs.fname)
-		if err != nil {
-			panic(err)
-		}
-		rs.file.Close()
-		rs.file = file
-		rs.scanner = bufio.NewScanner(rs.file)
-		rs.scanner.Buffer(make([]byte, 32), 32)
-		rs.scanner.Scan()
+func (rs *RandBytesSrcFromFile) new512bits() []byte {
+	var buf [32]byte
+	_, err := rs.file.Read(buf[:])
+	if err == io.EOF {
+		rs.file.Seek(0,0)
+		_, err = rs.file.Read(buf[:])
 	}
-	rs.h.Write(rs.scanner.Bytes())
-	rs.sum = rs.h.Sum(nil)
-	if len(rs.sum)!=64 {
-		panic("Not 512bits!")
+	if err != nil {
+		panic(err)
+	}
+	rs.h.Write(buf[:])
+	res := rs.h.Sum(nil)
+	if len(res)!=64 {
+		panic(fmt.Sprintf("Not 512bits: ", len(res)))
+	}
+	return res
+}
+
+func (rs *RandBytesSrcFromFile) step() {
+	var arrA, arrB [16][]byte
+	for i := 0; i < 16; i++ {
+		arrA[i] = rs.new512bits()
+		arrB[i] = rs.new512bits()
+	}
+	rs.buf = rs.buf[:0]
+	for i := 0; i < 16; i++ {
+		for j := 0; j < 16; j++ {
+			var buf [64]byte
+			copy(buf[:], arrA[i])
+			for k := 0; k < len(buf); k++ {
+				buf[k] ^= arrB[j][k]
+			}
+			//fmt.Printf("haha %v a%d %v b%d %v\n", buf[:], i, arrA[i], j, arrB[j])
+			rs.buf = append(rs.buf, buf[:]...)
+		}
 	}
 	rs.idx = 0
 }
@@ -65,9 +86,9 @@ func (rs *RandBytesSrcFromFile) step() {
 func (rs *RandBytesSrcFromFile) GetBytes(n int) []byte {
 	res := make([]byte, 0, n)
 	for len(res) < n {
-		res = append(res, rs.sum[rs.idx])
+		res = append(res, rs.buf[rs.idx])
 		rs.idx++
-		if rs.idx == len(rs.sum) {
+		if rs.idx == len(rs.buf) {
 			rs.step()
 		}
 	}
@@ -165,3 +186,22 @@ type RandSrc interface {
 }
 
 var _ RandSrc = &RandSrcFromFile{}
+
+/*
+package main
+
+import (
+	"fmt"
+	"github.com/coinexchain/randsrc"
+)
+
+func main() {
+	rs := randsrc.NewRandSrcFromFile("a.dat")
+	for i := 0; i >=0; i++ {
+		if i % 1000 == 0 {
+			fmt.Printf("Here %d\n", i)
+		}
+		rs.GetString(32)
+	}
+}
+*/
